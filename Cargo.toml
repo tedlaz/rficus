@@ -1,6 +1,6 @@
 [package]
 name = "rficus"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 publish = false # an app, not a crate: cargo itself refuses to publish it
 
