@@ -1,0 +1,6 @@
+# cargo-release: `cargo release patch --execute` bumps Cargo.toml, commits,
+# tags and pushes. The tag is what .github/workflows/release.yml builds from.
+publish = false # not a crates.io crate
+tag-name = "v{{version}}" # what the workflow triggers on
+allow-branch = ["master"]
+pre-release-commit-message = "Release {{version}}"
