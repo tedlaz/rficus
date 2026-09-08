@@ -20,7 +20,14 @@ const YTDLP_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/downlo
 /// and the full static GPL build is 163 MB and 290 MB. Verified this build
 /// still merges by stream copy, writes mp3 through libmp3lame and embeds
 /// thumbnails at id3v2 version 3.
-const FFMPEG_URL: &str = "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-lgpl-shared.zip";
+///
+/// `/releases/download/latest/` and not `/releases/latest/download/`: the two
+/// read alike and mean different things. The latter is "the newest release",
+/// which for this repo is an `autobuild-<date>` whose assets carry a build
+/// number in the name — so the fixed `master-latest` filename 404s there. The
+/// former names the release tagged `latest`, the rolling one that keeps these
+/// stable filenames.
+const FFMPEG_URL: &str = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl-shared.zip";
 
 /// We drive ffmpeg and ffprobe; ffplay is a 17 MB player nothing here opens.
 const FFMPEG_SKIP: &str = "ffplay.exe";
@@ -259,6 +266,18 @@ fn find_under(dir: &Path, name: &str, depth: usize) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::find_under;
+
+    /// The tools come from other people's release pages, which can be renamed
+    /// or restructured without anything here changing — exactly how the ffmpeg
+    /// URL started returning 404. Network, so ignored by default:
+    /// `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn the_download_urls_are_still_served() {
+        for url in [super::YTDLP_URL, super::FFMPEG_URL] {
+            crate::update::head_ok(url).unwrap_or_else(|e| panic!("{e}"));
+        }
+    }
 
     /// The gyan archive nests binaries under `<build name>/bin/`, and the
     /// build name changes every release, so the walk has to find them.

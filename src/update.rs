@@ -102,6 +102,23 @@ pub fn download(
     std::fs::rename(&part, dest).map_err(|e| e.to_string())
 }
 
+/// Is this URL still served? A HEAD, so it costs nothing even for a 65 MB zip.
+///
+/// Only used by the tests that guard the bootstrap's download URLs, which is
+/// worth a public function: those URLs are the one part of this app that other
+/// people can break without touching the repo.
+pub fn head_ok(url: &str) -> Result<(), String> {
+    let resp = agent(10, Some(30))
+        .head(url)
+        .call()
+        .map_err(|e| e.to_string())?;
+    if resp.status() == 200 {
+        Ok(())
+    } else {
+        Err(format!("{url} returned HTTP {}", resp.status()))
+    }
+}
+
 /// Where a freshly downloaded tool should land: next to the running exe.
 pub fn exe_dir() -> PathBuf {
     std::env::current_exe()

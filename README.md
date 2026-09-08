@@ -68,7 +68,9 @@ Checked against what yt-dlp actually asks of ffmpeg before switching: merging by
 stream copy, writing mp3 through `libmp3lame`, embedding a thumbnail at
 `id3v2_version 3`, and ffprobe reading the result back.
 
-## Build
+## Developer
+
+### Build
 
 ```
 cargo build --release
@@ -90,20 +92,47 @@ not do from an elevated install under Program Files.
 `cargo test` runs the output parsers. The GitHub version check is a network
 test, kept out of the normal run: `cargo test -- --ignored`.
 
-## Releasing
+### Cutting a release
 
-The version lives in `Cargo.toml` and nowhere else: the tag comes from it, and
-`installer.iss` takes it as `/DMyAppVersion`. One command cuts a release —
+The version lives in `Cargo.toml` and nowhere else. The tag is derived from it
+and `installer.iss` receives it as `/DMyAppVersion`, so there is no second place
+to forget.
+
+Once per machine:
 
 ```
-cargo release patch --execute
+cargo install cargo-release
 ```
 
-which bumps `Cargo.toml`, commits, tags `vX.Y.Z` and pushes (`cargo install
-cargo-release` once; settings are in `release.toml`). The tag starts
-`.github/workflows/release.yml`, which on a Windows runner tests, builds,
-compiles the installer and publishes a release with both artifacts:
-`setup_rficus.X.Y.Z.exe` and the portable `rficus.exe`.
+Then, from a clean `main`:
+
+```
+cargo release patch --execute     # 0.1.1 -> 0.1.2; also minor / major
+```
+
+That bumps `Cargo.toml` and `Cargo.lock`, commits as `Release X.Y.Z`, tags
+`vX.Y.Z` and pushes the branch and the tag. `release.toml` holds the settings —
+notably `publish = false`, since this is an application and has no business on
+crates.io, and `allow-branch`, which pins releases to `main`.
+
+To release the version already in the manifest rather than bumping, name it:
+
+```
+cargo release 0.1.1 --execute
+```
+
+Pushing the tag starts `.github/workflows/release.yml` on a Windows runner,
+which:
+
+1. refuses the run if the tag and `Cargo.toml` disagree — otherwise the
+   installer filename, the Add/Remove Programs entry and the exe resource would
+   each claim a different version,
+2. runs `cargo test --locked` and `cargo build --release --locked`,
+3. compiles the installer with Inno Setup, which the runner already has,
+4. publishes a release with generated notes and two artifacts:
+   `setup_rficus.X.Y.Z.exe` and the portable `rficus.exe`.
+
+Watch it with `gh run watch`, or the Actions tab.
 
 Without cargo-release, the same thing by hand:
 
@@ -115,8 +144,18 @@ git tag v0.2.0
 git push --follow-tags
 ```
 
-A tag that disagrees with `Cargo.toml` fails the workflow before anything is
-published, rather than shipping an installer that lies about its version.
+Two things that bite:
+
+- **Tags must be plain `vX.Y.Z`.** A pre-release tag such as `v0.2.0-rc1` can
+  never equal the manifest version, so the guard rejects it.
+- **A failed run leaves the tag behind.** Fix the cause, then delete the tag
+  locally and remotely before retrying, or the workflow has nothing new to
+  trigger on:
+
+  ```
+  git tag -d v0.2.0
+  git push origin :v0.2.0
+  ```
 
 The installer is unsigned, so SmartScreen warns until a download builds enough
 reputation.
