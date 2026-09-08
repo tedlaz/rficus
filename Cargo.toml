@@ -2,6 +2,7 @@
 name = "rficus"
 version = "0.1.0"
 edition = "2024"
+publish = false # an app, not a crate: cargo itself refuses to publish it
 
 [dependencies]
 eframe = { version = "0.36.1", default-features = false, features = ["glow"] }
