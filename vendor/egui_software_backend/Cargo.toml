@@ -1,0 +1,21 @@
+# egui_software_backend 0.0.3 (https://github.com/DGriffin91/egui_software_backend),
+# just the CPU rasterizer: bumped from egui 0.34 to 0.36, its winit runner removed.
+[package]
+name = "egui_software_backend"
+version = "0.0.3"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+ahash = "0.8.12" # egui 0.36 stopped re-exporting it
+constify = "0.0.1"
+egui = { version = "0.36.1", default-features = false }
+strength_reduce = "0.2.4"
+
+[lints.rust]
+unexpected_cfgs = "allow" # log/rayon/raster_stats paths left in the source, never enabled

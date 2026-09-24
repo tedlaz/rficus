@@ -1,6 +1,6 @@
 //! Visual style. egui's stock look is fine for debug tools; this is the app.
 
-use eframe::egui::{
+use egui::{
     self, Color32, CornerRadius, FontFamily, FontId, Margin, Pos2, Shadow, Stroke, TextStyle, Vec2,
 };
 
@@ -209,6 +209,8 @@ pub fn install_fonts(ctx: &egui::Context) {
                     std::sync::Arc::new(egui::FontData::from_owned(bytes)),
                 );
                 loaded.push((*name).to_owned());
+                // Each is a whole TTF parsed in memory; the first one covers it.
+                break;
             }
         }
         loaded

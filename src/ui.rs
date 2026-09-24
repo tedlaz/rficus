@@ -4,7 +4,6 @@ use crate::bootstrap::Bootstrap;
 use crate::config::Config;
 use crate::job::{Job, Spec, State};
 use crate::theme::{self, Palette};
-use eframe::egui;
 use std::path::PathBuf;
 
 /// Our title bar. Fixed height so its drag region is a known band.
@@ -45,6 +44,8 @@ pub struct App {
     /// Name of the active theme, one of theme::THEMES. [General] theme.
     theme: String,
     logo: Option<egui::TextureHandle>,
+    about_open: bool,
+    app_update: crate::about::SelfUpdate,
 }
 
 impl App {
@@ -63,12 +64,10 @@ impl App {
         theme::install_fonts(ctx);
         theme::apply(ctx, &theme);
 
-        let logo = eframe::icon_data::from_png_bytes(include_bytes!("../icon.png"))
-            .ok()
-            .map(|icon| {
-                let image: egui::ColorImage = (&icon).into();
-                ctx.load_texture("logo", image, egui::TextureOptions::LINEAR)
-            });
+        let logo = crate::icon().map(|icon| {
+            let image: egui::ColorImage = (&icon).into();
+            ctx.load_texture("logo", image, egui::TextureOptions::LINEAR)
+        });
 
         // Fetches whatever is missing and updates yt-dlp, off the UI thread.
         let tools = Bootstrap::start(cfg.get_bool("General", "check_updates"), {
@@ -93,6 +92,8 @@ impl App {
             message: None,
             theme,
             logo,
+            about_open: false,
+            app_update: crate::about::SelfUpdate::new(cfg.get_bool("General", "check_updates"), ctx),
             cfg,
         }
     }
@@ -106,9 +107,52 @@ impl App {
         )
     }
 
+    fn set_theme(&mut self, ctx: &egui::Context, name: &str) {
+        self.theme = name.to_owned();
+        theme::apply(ctx, name);
+        self.cfg.set("General", "theme", self.theme.clone());
+        self.cfg.save();
+    }
+
+    /// Start the freshly installed exe, then close this one.
+    fn restart(&mut self, ctx: &egui::Context) {
+        self.save_settings();
+        if let Ok(exe) = std::env::current_exe() {
+            let _ = std::process::Command::new(exe).spawn();
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
     fn repaint(ctx: &egui::Context) -> impl Fn() + Send + Clone + 'static {
         let ctx = ctx.clone();
         move || ctx.request_repaint()
+    }
+
+    /// Where the window last was, in physical pixels: [General] window = x,y,w,h.
+    pub fn saved_window(&self) -> Option<[i32; 4]> {
+        let v: Vec<i32> = self
+            .cfg
+            .get("General", "window")
+            .split(',')
+            .map(|n| n.trim().parse().ok())
+            .collect::<Option<_>>()?;
+        v.try_into().ok()
+    }
+
+    /// Kept for the next start. Not while maximized or minimized: that is not a
+    /// place to come back to, and a minimized window reports -32000,-32000.
+    pub fn remember_window(&mut self, window: &winit::window::Window) {
+        if window.is_maximized() || window.is_minimized() == Some(true) {
+            return;
+        }
+        if let Ok(pos) = window.outer_position() {
+            let size = window.inner_size();
+            self.cfg.set(
+                "General",
+                "window",
+                format!("{},{},{},{}", pos.x, pos.y, size.width, size.height),
+            );
+        }
     }
 
     fn save_settings(&mut self) {
@@ -244,10 +288,10 @@ impl App {
 
     /// Drops arrive through our own OLE target (see `dnd`), because winit's
     /// accepts files only. Registered on the first frame, once there is a window.
-    fn handle_drops(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+    fn handle_drops(&mut self, ctx: &egui::Context, window: &impl raw_window_handle::HasWindowHandle) {
         if self.dnd.is_none() {
-            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-            if let Ok(handle) = frame.window_handle()
+            use raw_window_handle::RawWindowHandle;
+            if let Ok(handle) = window.window_handle()
                 && let RawWindowHandle::Win32(win32) = handle.as_raw()
             {
                 let ctx = ctx.clone();
@@ -359,21 +403,20 @@ impl App {
             }
             ui.add_space(8.0);
 
-            let before = self.theme.clone();
-            egui::ComboBox::from_id_salt("theme")
-                .selected_text(egui::RichText::new(&self.theme).small())
-                .width(96.0)
-                .show_ui(ui, |ui| {
-                    for t in theme::THEMES {
-                        ui.selectable_value(&mut self.theme, t.name.to_string(), t.name);
-                    }
-                })
-                .response
-                .on_hover_text("Colour theme");
-            if self.theme != before {
-                theme::apply(ctx, &self.theme);
-                self.cfg.set("General", "theme", self.theme.clone());
-                self.cfg.save();
+            let about = ui
+                .add(egui::Button::new("About").min_size(egui::vec2(76.0, 0.0)))
+                .on_hover_text("About rficus, theme and updates");
+            if self.app_update.has_news() {
+                // A badge on the corner: there is an update waiting in there.
+                ui.painter().circle(
+                    about.rect.right_top() + egui::vec2(-4.0, 4.0),
+                    5.0,
+                    p.accent,
+                    egui::Stroke::new(2.0, p.panel),
+                );
+            }
+            if about.clicked() {
+                self.about_open = true;
             }
 
             if ui
@@ -399,7 +442,12 @@ impl App {
                 ui.add_space(2.0);
                 // Truncating, not wrapping: a narrow window shortens the name
                 // and the status rather than growing the bar.
+                // The labels truncate into whatever width they are given, so
+                // hold back room for the bar or it lands on "Check tools".
+                const BAR: f32 = 150.0;
+                let bar_room = if self.tools.busy { BAR + 6.0 + ui.spacing().item_spacing.x } else { 0.0 };
                 ui.vertical(|ui| {
+                    ui.set_max_width((ui.available_width() - bar_room).max(0.0));
                     ui.spacing_mut().item_spacing.y = 0.0;
                     ui.add(
                         egui::Label::new(
@@ -430,7 +478,7 @@ impl App {
                         None => egui::ProgressBar::new(0.0).animate(true),
                     };
                     ui.add(
-                        bar.desired_width(150.0)
+                        bar.desired_width(BAR)
                             .desired_height(14.0)
                             .corner_radius(egui::CornerRadius::ZERO),
                     );
@@ -673,8 +721,8 @@ impl App {
     }
 }
 
-impl eframe::App for App {
-    fn ui(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
+impl App {
+    pub fn ui(&mut self, root: &mut egui::Ui, window: &winit::window::Window) {
         let ctx = &root.ctx().clone();
         self.tools.poll();
         if self.tools.just_finished {
@@ -685,7 +733,7 @@ impl eframe::App for App {
             job.poll();
         }
         crate::job::start_queued(&mut self.jobs, self.max_jobs, Self::repaint(ctx));
-        self.handle_drops(ctx, frame);
+        self.handle_drops(ctx, window);
         Self::edge_resize(ctx);
         let running = self.jobs.iter().filter(|j| j.is_running()).count();
         let queued = self
@@ -814,6 +862,22 @@ impl eframe::App for App {
             None => {}
         }
 
+        self.app_update.poll();
+        if self.about_open {
+            let colors = crate::about::Colors {
+                ok: self.color(State::Finished),
+                error: self.color(State::Error),
+            };
+            let out = crate::about::show(ctx, &p, self.logo.as_ref(), &mut self.app_update, colors, running > 0);
+            if let Some(name) = out.theme {
+                self.set_theme(ctx, name);
+            }
+            if out.restart {
+                self.restart(ctx);
+            }
+            self.about_open = !out.close;
+        }
+
         if let Some(text) = self.message.clone() {
             egui::Window::new("Heads up")
                 .collapsible(false)
@@ -843,13 +907,7 @@ impl eframe::App for App {
         }
     }
 
-    /// eframe's default is a near-black, semi-transparent clear color, which
-    /// shows through under a light theme and behind the job table.
-    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
-        visuals.panel_fill.to_normalized_gamma_f32()
-    }
-
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+    pub fn on_exit(&mut self) {
         self.save_settings();
     }
 }

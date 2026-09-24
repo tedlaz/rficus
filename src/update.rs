@@ -6,6 +6,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 const LATEST_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest";
+/// rficus itself, for the About window.
+pub const REPO: &str = "https://github.com/tedlaz/rficus";
 
 /// Schannel via native-tls, trusting the Windows certificate store. The rustls
 /// stack plus its bundled roots would be a large share of this binary; the
@@ -46,7 +48,12 @@ pub fn local_version(exe: &Path) -> Result<String, String> {
 /// ponytail: scraping the redirect. If GitHub changes its shape, switch to
 /// /repos/yt-dlp/yt-dlp/releases/latest + serde_json.
 pub fn latest_version() -> Option<String> {
-    let resp = agent(0, Some(15)).get(LATEST_URL).call().ok()?;
+    latest_tag(LATEST_URL)
+}
+
+/// The tag `url` (a GitHub `/releases/latest`) redirects to.
+fn latest_tag(url: &str) -> Option<String> {
+    let resp = agent(0, Some(15)).get(url).call().ok()?;
     let loc = resp.headers().get("location")?.to_str().ok()?;
     let tag = loc.rsplit('/').next()?.trim();
     (!tag.is_empty()).then(|| tag.to_string())
@@ -104,9 +111,11 @@ pub fn download(
 
 /// Is this URL still served? A HEAD, so it costs nothing even for a 65 MB zip.
 ///
-/// Only used by the tests that guard the bootstrap's download URLs, which is
-/// worth a public function: those URLs are the one part of this app that other
-/// people can break without touching the repo.
+/// Only the tests that guard the bootstrap's download URLs use it, so it is not
+/// compiled into the app: those URLs are the one part of this app that other
+/// people can break without touching the repo, but checking them is not
+/// something the app itself ever needs to do.
+#[cfg(test)]
 pub fn head_ok(url: &str) -> Result<(), String> {
     let resp = agent(10, Some(30))
         .head(url)
@@ -116,6 +125,49 @@ pub fn head_ok(url: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("{url} returned HTTP {}", resp.status()))
+    }
+}
+
+/// The newest rficus release, if it is newer than this build.
+pub fn newer_app_version() -> Result<Option<String>, String> {
+    let tag = latest_tag(&format!("{REPO}/releases/latest")).ok_or("could not reach GitHub")?;
+    let latest = tag.trim_start_matches('v');
+    match is_newer(latest, env!("CARGO_PKG_VERSION")) {
+        Some(newer) => Ok(newer.then(|| latest.to_owned())),
+        None => Err(format!("unexpected release tag {tag}")),
+    }
+}
+
+/// `0.1.10` beats `0.1.9`: compared as numbers, not text.
+fn is_newer(latest: &str, current: &str) -> Option<bool> {
+    let parse = |v: &str| -> Option<Vec<u32>> { v.split('.').map(|n| n.parse().ok()).collect() };
+    Some(parse(latest)? > parse(current)?)
+}
+
+/// Swap the running exe for the release's portable `rficus.exe`. Windows lets
+/// a running exe be renamed, not overwritten, so it steps aside as `.old`
+/// (removed on the next start) and the new one takes its name. Works the same
+/// for an installed copy and a portable one; an installed copy's Add/Remove
+/// Programs entry keeps showing the old version until the next installer run.
+pub fn replace_self(version: &str, progress: &mut dyn FnMut(u64, Option<u64>)) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let new = exe.with_extension("new");
+    download(&format!("{REPO}/releases/download/v{version}/rficus.exe"), &new, progress)?;
+    let old = exe.with_extension("old");
+    let _ = std::fs::remove_file(&old);
+    std::fs::rename(&exe, &old).map_err(|e| e.to_string())?;
+    if let Err(e) = std::fs::rename(&new, &exe) {
+        let _ = std::fs::rename(&old, &exe);
+        return Err(e.to_string());
+    }
+    Ok(())
+}
+
+/// What `replace_self` left behind. Fails harmlessly while the previous
+/// process is still exiting; the next start gets it.
+pub fn remove_old_self() {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::fs::remove_file(exe.with_extension("old"));
     }
 }
 
@@ -129,6 +181,16 @@ pub fn exe_dir() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn compares_versions_as_numbers() {
+        use super::is_newer;
+        assert_eq!(is_newer("0.1.10", "0.1.9"), Some(true));
+        assert_eq!(is_newer("0.2.0", "0.1.2"), Some(true));
+        assert_eq!(is_newer("0.1.2", "0.1.2"), Some(false));
+        assert_eq!(is_newer("0.1.1", "0.1.2"), Some(false));
+        assert_eq!(is_newer("releases", "0.1.2"), None);
+    }
+
     /// Hits the network, so it is ignored by default:
     /// `cargo test -- --ignored`. Proves the TLS provider is wired up, which
     /// a successful compile does not.

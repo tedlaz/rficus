@@ -168,7 +168,7 @@ then puts it back to 4.8 MB:
 | Change | Saved |
 |---|---|
 | `opt-level="z"`, fat LTO, 1 codegen unit, `panic="abort"`, `strip` | 7.6 MB |
-| eframe on `glow` (OpenGL) instead of the default `wgpu` backend | 2.8 MB |
+| No eframe, no GPU: winit + softbuffer, egui rasterized on the CPU by a vendored `egui_software_backend` | — |
 | System fonts instead of eframe's bundled ~1.4 MB (`default_fonts` off) | 1.3 MB |
 | No `regex`; the one progress pattern is a dozen lines of `str` | 1.6 MB |
 | `ureq` on native-tls (schannel) instead of rustls + ring + webpki roots | 0.1 MB |

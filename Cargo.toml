@@ -1,17 +1,38 @@
 [package]
 name = "rficus"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
-publish = false # an app, not a crate: cargo itself refuses to publish it
+publish = false   # an app, not a crate: cargo itself refuses to publish it
 
 [dependencies]
-eframe = { version = "0.36.1", default-features = false, features = ["glow"] }
+bytemuck = "1"
+egui = { version = "0.36.1", default-features = false, features = ["bytemuck"] }
+egui-winit = { version = "0.36.1", default-features = false, features = [
+  "clipboard",
+] }
+egui_software_backend = { path = "vendor/egui_software_backend" } # CPU rendering: no GPU, no GPU driver in the process
+image = { version = "0.25", default-features = false, features = ["png"] }
 egui_extras = { version = "0.36.1", default-features = false }
 raw-window-handle = "0.6.2"
 rfd = { version = "0.17.2", default-features = false }
 rust-ini = "0.21.3"
-ureq = { version = "3.4.1", default-features = false, features = ["native-tls"] }
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Memory", "Win32_System_DataExchange", "Win32_System_SystemServices", "Win32_UI_Shell", "Win32_Graphics_Gdi", "Win32_System_Com_StructuredStorage", "Win32_UI_Shell_Common"] }
+softbuffer = { version = "0.4", default-features = false }
+winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
+ureq = { version = "3.4.1", default-features = false, features = [
+  "native-tls",
+] }
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Ole",
+  "Win32_System_Memory",
+  "Win32_System_DataExchange",
+  "Win32_System_SystemServices",
+  "Win32_UI_Shell",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_UI_Shell_Common",
+] }
 windows-core = "0.62"
 
 [profile.release]
